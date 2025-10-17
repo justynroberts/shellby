@@ -22,7 +22,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "tsc --noEmit",
-    "package": "npm run build && electron-builder"
+    "package": "npm run build && electron-builder",
+    "demo-capture": "npm run build && electron scripts/auto-demo-capture.js"
   },
   "keywords": [
     "ssh",
