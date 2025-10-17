@@ -215,7 +215,7 @@ Built with amazing open-source tools:
 
 ---
 
-**Version:** 1.0.1
+**Version:** 1.0.2
 **Status:** Production Ready
 Made with 💚 by FintonLabs
 

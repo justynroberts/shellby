@@ -184,6 +184,33 @@ export class SSHManager extends EventEmitter {
           cols: session.terminalCols,
           rows: session.terminalRows,
           term: 'xterm-256color',
+          // Add environment variables for better TUI support
+          env: {
+            TERM: 'xterm-256color',
+            COLORTERM: 'truecolor',
+            LANG: 'en_US.UTF-8',
+            LC_ALL: 'en_US.UTF-8',
+          },
+          // Set PTY modes for proper interactive application support
+          modes: {
+            // Input modes
+            ICANON: 0,    // Disable canonical mode (line buffering)
+            ECHO: 1,      // Enable echo
+            ECHOE: 1,     // Enable erase character echo
+            ECHOK: 1,     // Enable kill character echo
+            ECHONL: 0,    // Disable newline echo
+            ISIG: 1,      // Enable signal characters
+            IEXTEN: 1,    // Enable extended input processing
+            ICRNL: 1,     // Map CR to NL on input
+            // Output modes
+            OPOST: 1,     // Enable output processing
+            ONLCR: 1,     // Map NL to CR-NL on output
+            // Control modes
+            CS8: 1,       // 8-bit characters
+            PARENB: 0,    // Disable parity
+            // Local modes
+            TOSTOP: 0,    // Disable background write stopping
+          },
         },
         (err, channel) => {
           if (err) {
@@ -213,6 +240,11 @@ export class SSHManager extends EventEmitter {
             });
           });
 
+          // Handle channel errors
+          channel.on('error', (error: Error) => {
+            this.logger.error(`Channel error for session ${sessionId}:`, error);
+          });
+
           resolve();
         }
       );
@@ -238,7 +270,14 @@ export class SSHManager extends EventEmitter {
     instance.session.terminalCols = cols;
     instance.session.terminalRows = rows;
 
-    instance.channel.setWindow(rows, cols, 480, 640);
+    // Send window change signal with proper pixel dimensions
+    // Many TUI apps (like k9s, vim, htop) rely on this
+    const pixelWidth = cols * 8;  // Approximate char width
+    const pixelHeight = rows * 16; // Approximate char height
+
+    instance.channel.setWindow(rows, cols, pixelHeight, pixelWidth);
+
+    this.logger.debug(`Resized terminal for session ${sessionId} to ${cols}x${rows}`);
   }
 
   async executeCommand(sessionId: string, command: string): Promise<CommandResult> {
