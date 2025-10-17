@@ -22,14 +22,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "tsc --noEmit",
-    "package": "npm run build && electron-builder",
-    "capture-screenshots": "npm run build && electron demorecorder/scripts/automated-capture.js",
-    "record-video": "bash demorecorder/scripts/record-app-video.sh Electron 90",
-    "optimize-screenshots": "bash demorecorder/scripts/optimize-screenshots.sh",
-    "screenshots-to-gif": "bash demorecorder/scripts/screenshots-to-gif.sh",
-    "record-demo": "bash demorecorder/scripts/record-demo.sh",
-    "video-to-gif": "bash demorecorder/scripts/video-to-gif.sh",
-    "prepare-showcase": "npm run capture-screenshots && npm run optimize-screenshots && npm run screenshots-to-gif && echo '\n✅ Showcase complete! Screenshots and GIF ready.'"
+    "package": "npm run build && electron-builder"
   },
   "keywords": [
     "ssh",
