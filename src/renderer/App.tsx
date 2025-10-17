@@ -41,6 +41,18 @@ const TERMINAL_FONTS = [
   { name: 'Consolas', value: 'Consolas, Monaco, monospace' },
   { name: 'Inconsolata', value: 'Inconsolata, Monaco, monospace' },
   { name: 'Source Code Pro', value: '"Source Code Pro", Menlo, monospace' },
+  { name: 'Source Code Pro Powerline', value: '"Source Code Pro for Powerline", "Source Code Pro", monospace' },
+  { name: 'Fira Mono Powerline', value: '"Fira Mono for Powerline", "Fira Mono", monospace' },
+  { name: 'Roboto Mono Powerline', value: '"Roboto Mono for Powerline", "Roboto Mono", monospace' },
+  { name: 'Space Mono Powerline', value: '"Space Mono for Powerline", "Space Mono", monospace' },
+  { name: 'Ubuntu Mono Powerline', value: '"Ubuntu Mono derivative Powerline", "Ubuntu Mono", monospace' },
+  { name: 'DejaVu Sans Mono Powerline', value: '"DejaVu Sans Mono for Powerline", "DejaVu Sans Mono", monospace' },
+  { name: 'FiraCode Nerd Font', value: '"FiraCodeNerdFont-Regular", "Fira Code", monospace' },
+  { name: 'JetBrainsMono Nerd Font', value: '"JetBrainsMonoNerdFont-Regular", "JetBrains Mono", monospace' },
+  { name: 'MesloLGS Nerd Font', value: '"MesloLGSNerdFont-Regular", "Menlo", monospace' },
+  { name: 'SauceCodePro Nerd Font', value: '"SauceCodeProNerdFont-Regular", "Source Code Pro", monospace' },
+  { name: 'RobotoMono Nerd Font', value: '"RobotoMonoNerdFont-Regular", "Roboto Mono", monospace' },
+  { name: 'UbuntuMono Nerd Font', value: '"UbuntuMonoNerdFont-Regular", "Ubuntu Mono", monospace' },
 ];
 
 const TERMINAL_THEMES = {
@@ -400,6 +412,85 @@ export const App: React.FC = () => {
     }
   };
 
+  // Tab management functions
+  const createNewTab = (sessionId: string, profileName: string, profileHost: string): string => {
+    const tabId = `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newTab: TerminalTab = {
+      id: tabId,
+      sessionId,
+      profileName,
+      profileHost,
+      terminalRef: null,
+      xtermInstance: null,
+      fitAddon: null,
+    };
+
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(tabId);
+    setConnected(true);
+    setSessionId(sessionId);
+
+    return tabId;
+  };
+
+  const closeTab = async (tabId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    // Disconnect the session
+    try {
+      await window.electron.ssh.disconnect(tab.sessionId);
+    } catch (err) {
+      console.error('Error disconnecting tab:', err);
+    }
+
+    // Dispose terminal
+    if (tab.xtermInstance) {
+      tab.xtermInstance.dispose();
+    }
+
+    // Remove tab from array
+    setTabs(prev => {
+      const newTabs = prev.filter(t => t.id !== tabId);
+
+      // If we closed the active tab, switch to another
+      if (activeTabId === tabId) {
+        if (newTabs.length > 0) {
+          const newActiveTab = newTabs[newTabs.length - 1];
+          setActiveTabId(newActiveTab.id);
+          setSessionId(newActiveTab.sessionId);
+        } else {
+          setActiveTabId(null);
+          setSessionId(null);
+          setConnected(false);
+        }
+      }
+
+      return newTabs;
+    });
+  };
+
+  const switchToTab = (tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId);
+    if (tab) {
+      setActiveTabId(tabId);
+      setSessionId(tab.sessionId);
+      setConnected(true);
+
+      // Refit terminal when switching
+      setTimeout(() => {
+        if (tab.fitAddon && tab.xtermInstance) {
+          tab.fitAddon.fit();
+          window.electron.ssh.resize(tab.sessionId, tab.xtermInstance.cols, tab.xtermInstance.rows);
+        }
+      }, 50);
+    }
+  };
+
   const handleConnectWithProfile = async (profile: any) => {
     setConnecting(true);
     setError(null);
@@ -426,8 +517,9 @@ export const App: React.FC = () => {
       const response = await window.electron.ssh.connect(config);
 
       if (response.success) {
-        setSessionId(response.data);
-        setConnected(true);
+        // Create a new tab for this connection
+        const profileName = profile.name || `${profile.username}@${profile.host}`;
+        createNewTab(response.data, profileName, profile.host);
       } else {
         setError(response.error || 'Connection failed');
       }
@@ -439,18 +531,8 @@ export const App: React.FC = () => {
   };
 
   const handleDisconnect = async () => {
-    if (sessionId) {
-      try {
-        await window.electron.ssh.disconnect(sessionId);
-        setConnected(false);
-        setSessionId(null);
-        if (xtermRef.current) {
-          xtermRef.current.dispose();
-          xtermRef.current = null;
-        }
-      } catch (err: any) {
-        console.error('Disconnect error:', err);
-      }
+    if (activeTabId) {
+      await closeTab(activeTabId);
     }
   };
 
@@ -632,132 +714,146 @@ export const App: React.FC = () => {
     }
   };
 
-  // Setup terminal when connected
+  // Setup terminals for each tab
   useEffect(() => {
-    if (!connected || !sessionId) {
-      return;
-    }
-
-    if (!terminalRef.current) {
-      return;
-    }
-
-    // If terminal already exists, don't recreate
-    if (xtermRef.current) {
+    if (tabs.length === 0) {
       return;
     }
 
     const theme = TERMINAL_THEMES[terminalTheme as keyof typeof TERMINAL_THEMES];
+    const cleanup: Array<() => void> = [];
 
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: terminalFontSize,
-      fontFamily: terminalFont,
-      theme,
-      scrollback: 10000,
-    });
+    // Initialize terminals for tabs that don't have one yet
+    tabs.forEach((tab) => {
+      if (tab.xtermInstance || !tab.terminalRef) {
+        return;
+      }
 
-    const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon();
+      const term = new Terminal({
+        cursorBlink: true,
+        fontSize: terminalFontSize,
+        fontFamily: terminalFont,
+        theme,
+        scrollback: 10000,
+      });
 
-    term.loadAddon(fitAddon);
-    term.loadAddon(webLinksAddon);
+      const fitAddon = new FitAddon();
+      const webLinksAddon = new WebLinksAddon();
 
-    term.open(terminalRef.current);
+      term.loadAddon(fitAddon);
+      term.loadAddon(webLinksAddon);
 
-    // Use setTimeout to ensure DOM is ready
-    setTimeout(() => {
-      fitAddon.fit();
-      window.electron.ssh.resize(sessionId, term.cols, term.rows);
-    }, 100);
+      term.open(tab.terminalRef);
 
-    xtermRef.current = term;
-    fitAddonRef.current = fitAddon;
+      // Use setTimeout to ensure DOM is ready
+      setTimeout(() => {
+        fitAddon.fit();
+        window.electron.ssh.resize(tab.sessionId, term.cols, term.rows);
+      }, 100);
 
-    // Intercept keyboard events to detect Ctrl+C for copying when text is selected
-    term.attachCustomKeyEventHandler((event) => {
-      // Detect Ctrl+C (or Cmd+C on Mac)
-      if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
-        const selection = term.getSelection();
-        if (selection && selection.length > 0) {
-          // Copy selected text to clipboard history
-          window.electron.clipboard.copy(selection, 'terminal').catch(() => {});
-          // Prevent Ctrl+C from being sent to server when text is selected
-          return false;
+      // Update the tab object with terminal instances
+      tab.xtermInstance = term;
+      tab.fitAddon = fitAddon;
+
+      // Also update legacy refs for the active tab
+      if (tab.id === activeTabId) {
+        xtermRef.current = term;
+        fitAddonRef.current = fitAddon;
+      }
+
+      // Intercept keyboard events to detect Ctrl+C for copying when text is selected
+      term.attachCustomKeyEventHandler((event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
+          const selection = term.getSelection();
+          if (selection && selection.length > 0) {
+            window.electron.clipboard.copy(selection, 'terminal').catch(() => {});
+            return false;
+          }
         }
-      }
-      return true; // Allow other keys to work normally (including Ctrl+C when no selection)
-    });
+        return true;
+      });
 
-    term.onData((data) => {
-      if (sessionId) {
-        window.electron.ssh.sendData(sessionId, data);
-      }
-    });
+      term.onData((data) => {
+        window.electron.ssh.sendData(tab.sessionId, data);
+      });
 
-    const unsubscribeData = window.electron.ssh.onData((event) => {
-      if (event.sessionId === sessionId && event.data) {
-        term.write(event.data);
-      }
-    });
-
-    const unsubscribeStatus = window.electron.ssh.onStatus((event) => {
-      if (event.sessionId === sessionId) {
-        if (event.status === 'disconnected') {
-          setConnected(false);
-          setSessionId(null);
+      const unsubscribeData = window.electron.ssh.onData((event) => {
+        if (event.sessionId === tab.sessionId && event.data) {
+          term.write(event.data);
         }
-      }
+      });
+
+      const unsubscribeStatus = window.electron.ssh.onStatus((event) => {
+        if (event.sessionId === tab.sessionId) {
+          if (event.status === 'disconnected') {
+            // Find and close this tab
+            const tabToClose = tabs.find(t => t.sessionId === event.sessionId);
+            if (tabToClose) {
+              closeTab(tabToClose.id);
+            }
+          }
+        }
+      });
+
+      const unsubscribeError = window.electron.ssh.onError((event) => {
+        if (event.sessionId === tab.sessionId) {
+          setError(event.error);
+        }
+      });
+
+      const handleResize = () => {
+        // Only resize if this is the active tab
+        if (tab.id === activeTabId && fitAddon) {
+          fitAddon.fit();
+          window.electron.ssh.resize(tab.sessionId, term.cols, term.rows);
+        }
+      };
+
+      window.addEventListener('resize', handleResize);
+
+      cleanup.push(() => {
+        window.removeEventListener('resize', handleResize);
+        unsubscribeData();
+        unsubscribeStatus();
+        unsubscribeError();
+        // Don't dispose terminal here - it's handled in closeTab
+      });
     });
-
-    const unsubscribeError = window.electron.ssh.onError((event) => {
-      if (event.sessionId === sessionId) {
-        setError(event.error);
-      }
-    });
-
-    const handleResize = () => {
-      if (fitAddonRef.current && sessionId) {
-        fitAddonRef.current.fit();
-        window.electron.ssh.resize(sessionId, term.cols, term.rows);
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
 
     return () => {
-      term.dispose();
-      window.removeEventListener('resize', handleResize);
-      unsubscribeData();
-      unsubscribeStatus();
-      unsubscribeError();
+      cleanup.forEach(fn => fn());
     };
-  }, [connected, sessionId]);
+  }, [tabs.length, terminalTheme, terminalFont, terminalFontSize]);
 
-  // Update terminal settings dynamically
+  // Update terminal settings dynamically for all tabs
   useEffect(() => {
-    if (!xtermRef.current || !sessionId) {
+    if (tabs.length === 0) {
       return;
     }
 
-    const term = xtermRef.current;
     const theme = TERMINAL_THEMES[terminalTheme as keyof typeof TERMINAL_THEMES];
 
-    // Update options
-    term.options.fontSize = terminalFontSize;
-    term.options.fontFamily = terminalFont;
-    term.options.theme = theme;
+    tabs.forEach((tab) => {
+      if (!tab.xtermInstance) return;
 
-    // Refit terminal after font changes (no full refresh needed)
-    if (fitAddonRef.current) {
-      setTimeout(() => {
-        if (fitAddonRef.current && sessionId) {
-          fitAddonRef.current.fit();
-          window.electron.ssh.resize(sessionId, term.cols, term.rows);
-        }
-      }, 50);
-    }
-  }, [terminalFont, terminalFontSize, terminalTheme, sessionId]);
+      const term = tab.xtermInstance;
+
+      // Update options
+      term.options.fontSize = terminalFontSize;
+      term.options.fontFamily = terminalFont;
+      term.options.theme = theme;
+
+      // Refit terminal after font changes (only for active tab)
+      if (tab.fitAddon && tab.id === activeTabId) {
+        setTimeout(() => {
+          if (tab.fitAddon) {
+            tab.fitAddon.fit();
+            window.electron.ssh.resize(tab.sessionId, term.cols, term.rows);
+          }
+        }, 50);
+      }
+    });
+  }, [terminalFont, terminalFontSize, terminalTheme, tabs, activeTabId]);
 
   // Get current theme colors
   const currentTheme = TERMINAL_THEMES[terminalTheme as keyof typeof TERMINAL_THEMES];
@@ -814,7 +910,7 @@ export const App: React.FC = () => {
       <div style={{
         padding: '12px 20px',
         background: isDarkTheme ? `${currentTheme.black}dd` : `${currentTheme.white}dd`,
-        borderBottom: `1px solid ${currentTheme.brightBlack}`,
+        borderBottom: `1px solid rgba(255, 255, 255, 0.12)`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -833,12 +929,13 @@ export const App: React.FC = () => {
             onClick={() => {
               loadClipboardHistory();
               setShowClipboard(true);
+              setShowSnippets(false);
             }}
             style={{
               padding: '8px 14px',
-              background: showClipboard ? currentTheme.blue : (isDarkTheme ? currentTheme.brightBlack : currentTheme.white),
-              color: showClipboard ? currentTheme.background : currentTheme.foreground,
-              border: `1px solid ${currentTheme.brightBlack}`,
+              background: showClipboard ? currentTheme.cyan : (isDarkTheme ? '#1a1a1a' : '#f0f0f0'),
+              color: showClipboard ? (isDarkTheme ? currentTheme.background : '#fff') : currentTheme.cyan,
+              border: `1px solid ${showClipboard ? currentTheme.cyan : (isDarkTheme ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)')}`,
               borderRadius: '6px',
               cursor: 'pointer',
               fontSize: '13px',
@@ -856,9 +953,9 @@ export const App: React.FC = () => {
             onClick={() => setShowSnippets(true)}
             style={{
               padding: '8px 14px',
-              background: showSnippets ? currentTheme.blue : (isDarkTheme ? currentTheme.brightBlack : currentTheme.white),
-              color: showSnippets ? currentTheme.background : currentTheme.foreground,
-              border: `1px solid ${currentTheme.brightBlack}`,
+              background: showSnippets ? currentTheme.yellow : (isDarkTheme ? '#1a1a1a' : '#f0f0f0'),
+              color: showSnippets ? (isDarkTheme ? currentTheme.background : '#fff') : currentTheme.yellow,
+              border: `1px solid ${showSnippets ? currentTheme.yellow : (isDarkTheme ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)')}`,
               borderRadius: '6px',
               cursor: 'pointer',
               fontSize: '13px',
@@ -872,95 +969,100 @@ export const App: React.FC = () => {
             <Code size={16} />
           </button>
 
-          {connected && sessionId && (
-            <>
-              <button
-                onClick={() => setShowFileManager(true)}
-                style={{
-                  padding: '8px 14px',
-                  background: showFileManager ? currentTheme.blue : (isDarkTheme ? currentTheme.brightBlack : currentTheme.white),
-                  color: showFileManager ? currentTheme.background : currentTheme.foreground,
-                  border: `1px solid ${currentTheme.brightBlack}`,
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontWeight: 500,
-                }}
-                title="File Manager (SFTP)"
-              >
-                <HardDrive size={16} />
-              </button>
+          <button
+            onClick={() => {
+              if (connected && sessionId) {
+                setShowFileManager(true);
+                setShowSnippets(false);
+              }
+            }}
+            style={{
+              padding: '8px 14px',
+              background: showFileManager ? currentTheme.green : (isDarkTheme ? '#1a1a1a' : '#f0f0f0'),
+              color: showFileManager ? (isDarkTheme ? currentTheme.background : '#fff') : currentTheme.green,
+              border: `1px solid ${showFileManager ? currentTheme.green : (isDarkTheme ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)')}`,
+              borderRadius: '6px',
+              cursor: connected && sessionId ? 'pointer' : 'not-allowed',
+              fontSize: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: 500,
+              opacity: connected && sessionId ? 1 : 0.5,
+            }}
+            title={connected && sessionId ? "File Manager (SFTP)" : "File Manager (Connect first)"}
+          >
+            <HardDrive size={16} />
+          </button>
 
-              <button
-                onClick={() => setShowAI(!showAI)}
-                style={{
-                  padding: '8px 14px',
-                  background: showAI ? currentTheme.blue : (isDarkTheme ? currentTheme.brightBlack : currentTheme.white),
-                  color: showAI ? currentTheme.background : currentTheme.foreground,
-                  border: `1px solid ${currentTheme.brightBlack}`,
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontWeight: 500,
-                }}
-                title="AI Assistant"
-              >
-                <Bot size={16} />
-              </button>
+          <button
+            onClick={() => {
+              setShowAI(!showAI);
+              if (!showAI) setShowSnippets(false);
+            }}
+            style={{
+              padding: '8px 14px',
+              background: showAI ? currentTheme.magenta : (isDarkTheme ? '#1a1a1a' : '#f0f0f0'),
+              color: showAI ? (isDarkTheme ? currentTheme.background : '#fff') : currentTheme.magenta,
+              border: `1px solid ${showAI ? currentTheme.magenta : (isDarkTheme ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)')}`,
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: 500,
+            }}
+            title="AI Assistant"
+          >
+            <Bot size={16} />
+          </button>
 
-              <button
-                onClick={() => {
-                  const modes: Array<'off' | 'blue' | 'amber' | 'green' | 'matrix'> = ['off', 'blue', 'amber', 'green', 'matrix'];
-                  const currentIndex = modes.indexOf(vhsMode);
-                  const nextIndex = (currentIndex + 1) % modes.length;
-                  setVhsMode(modes[nextIndex]);
-                }}
-                style={{
-                  padding: '8px 14px',
-                  background: vhsMode !== 'off' ? currentTheme.magenta : (isDarkTheme ? currentTheme.brightBlack : currentTheme.white),
-                  color: vhsMode !== 'off' ? currentTheme.background : currentTheme.foreground,
-                  border: `1px solid ${currentTheme.brightBlack}`,
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontWeight: 500,
-                }}
-                title={`VHS Mode: ${vhsMode === 'off' ? 'Off' : vhsMode === 'blue' ? 'Blue/White CRT' : vhsMode === 'amber' ? 'Amber CRT' : vhsMode === 'green' ? 'Green CRT' : 'Matrix'}`}
-              >
-                <Tv size={16} />
-                {vhsMode !== 'off' && <span style={{ fontSize: '10px', textTransform: 'uppercase' }}>{vhsMode}</span>}
-              </button>
+          <button
+            onClick={() => {
+              const modes: Array<'off' | 'blue' | 'amber' | 'green' | 'matrix'> = ['off', 'blue', 'amber', 'green', 'matrix'];
+              const currentIndex = modes.indexOf(vhsMode);
+              const nextIndex = (currentIndex + 1) % modes.length;
+              setVhsMode(modes[nextIndex]);
+            }}
+            style={{
+              padding: '8px 14px',
+              background: vhsMode !== 'off' ? currentTheme.blue : (isDarkTheme ? '#1a1a1a' : '#f0f0f0'),
+              color: vhsMode !== 'off' ? (isDarkTheme ? currentTheme.background : '#fff') : currentTheme.blue,
+              border: `1px solid ${vhsMode !== 'off' ? currentTheme.blue : (isDarkTheme ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)')}`,
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: 500,
+            }}
+            title={`VHS Mode: ${vhsMode === 'off' ? 'Off' : vhsMode === 'blue' ? 'Blue/White CRT' : vhsMode === 'amber' ? 'Amber CRT' : vhsMode === 'green' ? 'Green CRT' : 'Matrix'}`}
+          >
+            <Tv size={16} />
+            {vhsMode !== 'off' && <span style={{ fontSize: '10px', textTransform: 'uppercase' }}>{vhsMode}</span>}
+          </button>
 
-              <button
-                onClick={() => setShowTerminalSettings(true)}
-                style={{
-                  padding: '8px 14px',
-                  background: isDarkTheme ? currentTheme.brightBlack : currentTheme.white,
-                  color: currentTheme.foreground,
-                  border: `1px solid ${currentTheme.brightBlack}`,
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontWeight: 500,
-                }}
-                title="Terminal Settings"
-              >
-                <Settings size={16} />
-              </button>
-            </>
-          )}
+          <button
+            onClick={() => setShowTerminalSettings(true)}
+            style={{
+              padding: '8px 14px',
+              background: isDarkTheme ? '#1a1a1a' : '#f0f0f0',
+              color: currentTheme.brightBlue,
+              border: `1px solid ${isDarkTheme ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)'}`,
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: 500,
+            }}
+            title="Terminal Settings"
+          >
+            <Settings size={16} />
+          </button>
 
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '12px', alignItems: 'center' }}>
             {connected && sessionId && (
@@ -989,12 +1091,119 @@ export const App: React.FC = () => {
         </div>
       </div>
 
+      {/* Tab Bar */}
+      {tabs.length > 0 && (
+        <div style={{
+          background: isDarkTheme ? '#0a0a0a' : currentTheme.white,
+          borderBottom: `1px solid rgba(255, 255, 255, 0.12)`,
+          display: 'flex',
+          alignItems: 'center',
+          overflowX: 'auto',
+          overflowY: 'hidden',
+          gap: '2px',
+          padding: '2px 8px',
+        }}>
+          <button
+            onClick={() => {
+              setActiveTabId(null);
+              setSessionId(null);
+              setConnected(false);
+            }}
+            style={{
+              padding: '4px 10px',
+              background: !activeTabId ? currentTheme.blue : 'transparent',
+              color: !activeTabId ? currentTheme.background : currentTheme.brightBlack,
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontWeight: 600,
+              marginRight: '4px',
+              flexShrink: 0,
+            }}
+            title="Show connections"
+          >
+            <Server size={12} />
+            CONNECTIONS
+          </button>
+          {tabs.map(tab => (
+            <div
+              key={tab.id}
+              onClick={() => switchToTab(tab.id)}
+              style={{
+                padding: '4px 8px',
+                background: tab.id === activeTabId ? (isDarkTheme ? currentTheme.brightBlack : currentTheme.foreground) : 'transparent',
+                color: tab.id === activeTabId ? (isDarkTheme ? currentTheme.foreground : currentTheme.background) : currentTheme.foreground,
+                border: `1px solid ${tab.id === activeTabId ? currentTheme.brightBlack : 'transparent'}`,
+                borderRadius: '4px 4px 0 0',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '11px',
+                fontWeight: tab.id === activeTabId ? 600 : 400,
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap',
+                minWidth: '80px',
+                maxWidth: '140px',
+              }}
+              onMouseEnter={(e) => {
+                if (tab.id !== activeTabId) {
+                  e.currentTarget.style.background = isDarkTheme ? `${currentTheme.brightBlack}66` : `${currentTheme.foreground}22`;
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (tab.id !== activeTabId) {
+                  e.currentTarget.style.background = 'transparent';
+                }
+              }}
+            >
+              <Server size={11} style={{ flexShrink: 0 }} />
+              <div style={{
+                flex: 1,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {tab.profileName}
+              </div>
+              <button
+                onClick={(e) => closeTab(tab.id, e)}
+                style={{
+                  padding: '1px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: tab.id === activeTabId ? currentTheme.red : currentTheme.brightBlack,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  borderRadius: '2px',
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = `${currentTheme.red}33`;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                }}
+                title="Close tab"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Main Content */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* Profile List */}
+        {/* Profile List - shown when no active tab */}
         <div style={{
           flex: 1,
-          display: connected ? 'none' : 'flex',
+          display: activeTabId === null ? 'flex' : 'none',
           flexDirection: 'column',
           padding: '32px',
           overflowY: 'auto',
@@ -1240,18 +1449,23 @@ export const App: React.FC = () => {
           )}
         </div>
 
-        {/* Terminal - Always rendered, just hidden */}
-        <div
-          ref={terminalRef}
-          style={{
-            flex: 1,
-            padding: '8px',
-            overflow: 'hidden',
-            background: currentTheme.background,
-            display: connected ? 'block' : 'none',
-            position: 'relative',
-          }}
-        ></div>
+        {/* Terminals - One for each tab */}
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            ref={(el) => {
+              tab.terminalRef = el;
+            }}
+            style={{
+              flex: 1,
+              padding: '8px',
+              overflow: 'hidden',
+              background: currentTheme.background,
+              display: tab.id === activeTabId ? 'block' : 'none',
+              position: 'relative',
+            }}
+          ></div>
+        ))}
 
         {/* Connecting Overlay */}
         {connecting && (
@@ -1261,65 +1475,167 @@ export const App: React.FC = () => {
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(0, 0, 0, 0.85)',
+            background: 'rgba(0, 0, 0, 0.95)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 1000,
           }}>
+            {/* Terminal-style SSH handshake animation */}
             <div style={{
-              width: '200px',
-              height: '200px',
               position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '60px',
+              marginBottom: '30px',
+            }}>
+              {/* Client computer */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '12px',
+                animation: 'slideInLeft 0.8s ease-out',
+              }}>
+                <div style={{
+                  width: '80px',
+                  height: '80px',
+                  border: `3px solid ${currentTheme.blue}`,
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: `${currentTheme.blue}15`,
+                  boxShadow: `0 0 30px ${currentTheme.blue}60`,
+                  animation: 'pulse2 2s ease-in-out infinite',
+                }}>
+                  <PawPrint size={40} style={{ color: currentTheme.blue }} />
+                </div>
+                <div style={{ fontSize: '12px', color: currentTheme.brightBlack, fontWeight: 500 }}>
+                  CLIENT
+                </div>
+              </div>
+
+              {/* Connection packets flowing between client and server */}
+              <div style={{
+                position: 'relative',
+                width: '200px',
+                height: '4px',
+                background: `${currentTheme.brightBlack}40`,
+                borderRadius: '2px',
+                overflow: 'visible',
+              }}>
+                {/* Animated data packets */}
+                {[0, 1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    style={{
+                      position: 'absolute',
+                      left: '0',
+                      top: '-6px',
+                      width: '20px',
+                      height: '16px',
+                      background: currentTheme.cyan,
+                      borderRadius: '3px',
+                      boxShadow: `0 0 15px ${currentTheme.cyan}`,
+                      animation: `dataFlow 1.5s ease-in-out ${i * 0.3}s infinite`,
+                    }}
+                  />
+                ))}
+
+                {/* SSH key exchange indicator */}
+                <div style={{
+                  position: 'absolute',
+                  top: '-35px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  fontSize: '10px',
+                  color: currentTheme.green,
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px',
+                  animation: 'fadeInOut 2s ease-in-out infinite',
+                  whiteSpace: 'nowrap',
+                }}>
+                  SSH-2.0
+                </div>
+              </div>
+
+              {/* Server */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '12px',
+                animation: 'slideInRight 0.8s ease-out',
+              }}>
+                <div style={{
+                  width: '80px',
+                  height: '80px',
+                  border: `3px solid ${currentTheme.green}`,
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: `${currentTheme.green}15`,
+                  boxShadow: `0 0 30px ${currentTheme.green}60`,
+                  animation: 'pulse2 2s ease-in-out 0.5s infinite',
+                }}>
+                  <Server size={40} style={{ color: currentTheme.green }} />
+                </div>
+                <div style={{ fontSize: '12px', color: currentTheme.brightBlack, fontWeight: 500 }}>
+                  SERVER
+                </div>
+              </div>
+            </div>
+
+            {/* Terminal-style progress steps */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              fontFamily: 'Monaco, monospace',
+              fontSize: '12px',
               marginBottom: '20px',
             }}>
-              {/* Rotating circles */}
-              <div style={{
-                position: 'absolute',
-                width: '100%',
-                height: '100%',
-                border: '4px solid transparent',
-                borderTop: '4px solid #0e639c',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite',
-              }} />
-              <div style={{
-                position: 'absolute',
-                width: '80%',
-                height: '80%',
-                top: '10%',
-                left: '10%',
-                border: '4px solid transparent',
-                borderRight: '4px solid #0dbc79',
-                borderRadius: '50%',
-                animation: 'spin 1.5s linear infinite reverse',
-              }} />
-              <div style={{
-                position: 'absolute',
-                width: '60%',
-                height: '60%',
-                top: '20%',
-                left: '20%',
-                border: '4px solid transparent',
-                borderBottom: '4px solid #e5e510',
-                borderRadius: '50%',
-                animation: 'spin 2s linear infinite',
-              }} />
+              {[
+                { text: '> Initiating SSH handshake...', delay: 0 },
+                { text: '> Exchanging encryption keys...', delay: 0.3 },
+                { text: '> Authenticating session...', delay: 0.6 },
+              ].map((step, i) => (
+                <div
+                  key={i}
+                  style={{
+                    color: currentTheme.green,
+                    opacity: 0,
+                    animation: `terminalLine 0.5s ease-out ${step.delay}s forwards`,
+                  }}
+                >
+                  {step.text}
+                </div>
+              ))}
             </div>
+
+            {/* Status text */}
             <div style={{
               fontSize: '18px',
               fontWeight: 600,
-              color: '#0e639c',
+              color: currentTheme.cyan,
               marginBottom: '8px',
+              fontFamily: 'Monaco, monospace',
+              letterSpacing: '1px',
             }}>
-              Establishing SSH Connection
+              ESTABLISHING SECURE CONNECTION
             </div>
+
+            {/* Animated cursor */}
             <div style={{
-              fontSize: '14px',
-              color: '#888',
+              fontFamily: 'Monaco, monospace',
+              fontSize: '12px',
+              color: currentTheme.cyan,
             }}>
-              Connecting to remote server...
+              <span style={{ animation: 'blink 1s step-end infinite' }}>▊</span>
             </div>
           </div>
         )}
@@ -1330,13 +1646,97 @@ export const App: React.FC = () => {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
+        @keyframes pulse {
+          0% { transform: scale(0.8); opacity: 0; }
+          50% { opacity: 0.5; }
+          100% { transform: scale(1.2); opacity: 0; }
+        }
+        @keyframes pulse2 {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.05); opacity: 0.8; }
+        }
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+        }
+        @keyframes glow {
+          0% { opacity: 0.7; }
+          100% { opacity: 1; }
+        }
+        @keyframes gradientShift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        @keyframes fadeInOut {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 1; }
+        }
+        @keyframes bounce {
+          0%, 80%, 100% { transform: translateY(0); }
+          40% { transform: translateY(-12px); }
+        }
+        @keyframes slideInLeft {
+          0% {
+            transform: translateX(-50px);
+            opacity: 0;
+          }
+          100% {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        @keyframes slideInRight {
+          0% {
+            transform: translateX(50px);
+            opacity: 0;
+          }
+          100% {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        @keyframes dataFlow {
+          0% {
+            left: 0%;
+            opacity: 0;
+            transform: scale(0.8);
+          }
+          10% {
+            opacity: 1;
+            transform: scale(1);
+          }
+          90% {
+            opacity: 1;
+            transform: scale(1);
+          }
+          100% {
+            left: calc(100% - 20px);
+            opacity: 0;
+            transform: scale(0.8);
+          }
+        }
+        @keyframes terminalLine {
+          0% {
+            opacity: 0;
+            transform: translateX(-10px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        @keyframes blink {
+          0%, 50% { opacity: 1; }
+          51%, 100% { opacity: 0; }
+        }
       `}</style>
 
       {/* Footer */}
       <div style={{
         padding: '8px 20px',
         background: isDarkTheme ? `${currentTheme.black}dd` : `${currentTheme.white}dd`,
-        borderTop: `1px solid ${currentTheme.brightBlack}`,
+        borderTop: `1px solid rgba(255, 255, 255, 0.12)`,
         fontSize: '12px',
         color: currentTheme.brightBlack,
       }}>

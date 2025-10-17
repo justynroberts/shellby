@@ -167,7 +167,7 @@ export const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, onExecu
     <div
       style={{
         position: 'fixed',
-        top: 0,
+        top: '60px',
         left: 0,
         right: 0,
         bottom: 0,
@@ -175,6 +175,7 @@ export const SnippetManager: React.FC<SnippetManagerProps> = ({ onClose, onExecu
         display: 'flex',
         flexDirection: 'column',
         zIndex: 1000,
+        borderTop: '1px solid #333',
       }}
     >
       {/* Header */}

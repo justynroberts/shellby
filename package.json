@@ -1,7 +1,7 @@
 {
   "name": "shellby",
   "productName": "Shellby",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Modern SSH/SFTP terminal with AI assistant, file manager, and clipboard manager by FintonLabs",
   "main": "dist/main/index.js",
   "repository": {
@@ -22,8 +22,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "tsc --noEmit",
-    "package": "npm run build && electron-builder",
-    "demo-capture": "npm run build && electron scripts/auto-demo-capture.js"
+    "package": "npm run build && electron-builder"
   },
   "keywords": [
     "ssh",
