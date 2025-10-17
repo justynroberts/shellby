@@ -19,7 +19,8 @@ import {
   HardDrive,
   Bot,
   Code,
-  CornerDownLeft
+  CornerDownLeft,
+  Files
 } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import { FileManager } from './components/FileManager';
@@ -314,7 +315,22 @@ const PROFILE_COLORS = [
   '#2472c8', '#11a8cd', '#f14c4c', '#d670d6', '#23d18b'
 ];
 
+interface TerminalTab {
+  id: string;
+  sessionId: string;
+  profileName: string;
+  profileHost: string;
+  terminalRef: HTMLDivElement | null;
+  xtermInstance: Terminal | null;
+  fitAddon: FitAddon | null;
+}
+
 export const App: React.FC = () => {
+  // Multi-tab terminal state
+  const [tabs, setTabs] = useState<TerminalTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+
+  // Legacy state for compatibility
   const [connected, setConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -359,10 +375,14 @@ export const App: React.FC = () => {
   const [profileTags, setProfileTags] = useState<string[]>([]);
   const [profileTagInput, setProfileTagInput] = useState('');
 
-  // Terminal refs
+  // Terminal refs (legacy - still used for some operations)
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+
+  // Computed values
+  const activeTab = tabs.find(tab => tab.id === activeTabId);
+  const hasConnections = tabs.length > 0;
 
   // Load profiles on mount
   useEffect(() => {
@@ -532,6 +552,25 @@ export const App: React.FC = () => {
         console.error('Failed to delete profile:', err);
       }
     }
+  };
+
+  const cloneProfile = (profile: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Create a copy with modified name
+    const clonedName = profile.name ? `${profile.name} (Copy)` : `${profile.username}@${profile.host} (Copy)`;
+    setEditingProfile(null); // Important: set to null so it creates a new profile
+    setProfileName(clonedName);
+    setProfileHost(profile.host);
+    setProfilePort(profile.port?.toString() || '22');
+    setProfileUsername(profile.username);
+    setProfilePassword(profile.password || '');
+    setProfileColor(profile.color || PROFILE_COLORS[0]);
+    setProfileAuthMethod(profile.authMethod || 'password');
+    setProfilePrivateKey(profile.privateKeyContent || '');
+    setProfilePassphrase(profile.passphrase || '');
+    setProfileTags(profile.tags || []);
+    setProfileTagInput('');
+    setShowProfileModal(true);
   };
 
   const selectKeyFile = async () => {
@@ -1058,6 +1097,22 @@ export const App: React.FC = () => {
                     gap: '8px',
                   }}>
                     <button
+                      onClick={(e) => cloneProfile(profile, e)}
+                      style={{
+                        padding: '6px',
+                        background: '#3c3c3c',
+                        color: '#2472c8',
+                        border: '1px solid #555',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      title="Clone connection"
+                    >
+                      <Files size={14} />
+                    </button>
+                    <button
                       onClick={(e) => {
                         e.stopPropagation();
                         openProfileModal(profile);
@@ -1072,6 +1127,7 @@ export const App: React.FC = () => {
                         display: 'flex',
                         alignItems: 'center',
                       }}
+                      title="Edit connection"
                     >
                       <Edit2 size={14} />
                     </button>
@@ -1087,6 +1143,7 @@ export const App: React.FC = () => {
                         display: 'flex',
                         alignItems: 'center',
                       }}
+                      title="Delete connection"
                     >
                       <Trash2 size={14} />
                     </button>
