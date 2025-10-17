@@ -720,74 +720,117 @@ export const App: React.FC = () => {
     }
   }, [terminalFont, terminalFontSize, terminalTheme, sessionId]);
 
+  // Get current theme colors
+  const currentTheme = TERMINAL_THEMES[terminalTheme as keyof typeof TERMINAL_THEMES];
+  const isDarkTheme = currentTheme.background !== '#ffffff' && currentTheme.background !== '#fafafa' && currentTheme.background !== '#fbf1c7' && currentTheme.background !== '#fdf6e3';
+
+  // VHS effect setup
+  const vhsColors = vhsMode !== 'off' ? {
+    blue: { scanline: 'rgba(0, 180, 255, 0.15)', glow: '0, 180, 255' },
+    amber: { scanline: 'rgba(255, 176, 0, 0.2)', glow: '255, 176, 0' },
+    green: { scanline: 'rgba(0, 255, 0, 0.15)', glow: '0, 255, 0' },
+    matrix: { scanline: 'rgba(0, 255, 65, 0.2)', glow: '0, 255, 65' }
+  }[vhsMode] : null;
+
   return (
     <div style={{
       width: '100%',
       height: '100%',
       display: 'flex',
       flexDirection: 'column',
-      background: '#1e1e1e',
+      background: currentTheme.background,
+      color: currentTheme.foreground,
       fontFamily: 'Space Grotesk, sans-serif',
+      position: 'relative',
     }}>
+      {/* VHS/CRT Effects Overlay - Applied to entire UI */}
+      {vhsMode !== 'off' && vhsColors && (
+        <>
+          {/* Static scanline overlay */}
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: `repeating-linear-gradient(0deg, ${vhsColors.scanline}, ${vhsColors.scanline} 1px, transparent 1px, transparent 2px)`,
+            pointerEvents: 'none',
+            zIndex: 9999,
+          }} />
+          {/* CRT glow */}
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            boxShadow: `inset 0 0 100px rgba(${vhsColors.glow}, 0.1)`,
+            pointerEvents: 'none',
+            zIndex: 9998,
+          }} />
+        </>
+      )}
+
       {/* Header */}
       <div style={{
         padding: '12px 20px',
-        background: '#2d2d2d',
-        borderBottom: '1px solid #3e3e3e',
+        background: isDarkTheme ? `${currentTheme.black}dd` : `${currentTheme.white}dd`,
+        borderBottom: `1px solid ${currentTheme.brightBlack}`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
       }}>
-        <h1 style={{ fontSize: '18px', fontWeight: 600, margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <PawPrint size={20} style={{ color: '#0dbc79' }} />
-          Shellby
-        </h1>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          {connected && sessionId && (
-            <span style={{ fontSize: '13px', color: '#0dbc79' }}>
-              ● CONNECTED
-            </span>
-          )}
-
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginRight: '40px' }}>
+          <h1 style={{ fontSize: '20px', fontWeight: 600, margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <PawPrint size={22} style={{ color: currentTheme.green }} />
+            Shellby
+          </h1>
+          <div style={{ fontSize: '11px', color: currentTheme.brightBlack, marginLeft: '32px', fontWeight: 400 }}>
+            by FintonLabs
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
           <button
             onClick={() => {
               loadClipboardHistory();
               setShowClipboard(true);
             }}
             style={{
-              padding: '6px 12px',
-              background: showClipboard ? '#0e639c' : '#3c3c3c',
-              color: '#cccccc',
-              border: '1px solid #555',
-              borderRadius: '4px',
+              padding: '8px 14px',
+              background: showClipboard ? currentTheme.blue : (isDarkTheme ? currentTheme.brightBlack : currentTheme.white),
+              color: showClipboard ? currentTheme.background : currentTheme.foreground,
+              border: `1px solid ${currentTheme.brightBlack}`,
+              borderRadius: '6px',
               cursor: 'pointer',
               fontSize: '13px',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
+              fontWeight: 500,
             }}
             title="Clipboard Manager"
           >
-            <Clipboard size={14} />
+            <Clipboard size={16} />
           </button>
 
           <button
             onClick={() => setShowSnippets(true)}
             style={{
-              padding: '6px 12px',
-              background: showSnippets ? '#0e639c' : '#3c3c3c',
-              color: '#cccccc',
-              border: '1px solid #555',
-              borderRadius: '4px',
+              padding: '8px 14px',
+              background: showSnippets ? currentTheme.blue : (isDarkTheme ? currentTheme.brightBlack : currentTheme.white),
+              color: showSnippets ? currentTheme.background : currentTheme.foreground,
+              border: `1px solid ${currentTheme.brightBlack}`,
+              borderRadius: '6px',
               cursor: 'pointer',
               fontSize: '13px',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
+              fontWeight: 500,
             }}
             title="Command Snippets"
           >
-            <Code size={14} />
+            <Code size={16} />
           </button>
 
           {connected && sessionId && (
@@ -795,45 +838,43 @@ export const App: React.FC = () => {
               <button
                 onClick={() => setShowFileManager(true)}
                 style={{
-                  padding: '6px 12px',
-                  background: showFileManager ? '#0e639c' : '#3c3c3c',
-                  color: '#cccccc',
-                  border: '1px solid #555',
-                  borderRadius: '4px',
+                  padding: '8px 14px',
+                  background: showFileManager ? currentTheme.blue : (isDarkTheme ? currentTheme.brightBlack : currentTheme.white),
+                  color: showFileManager ? currentTheme.background : currentTheme.foreground,
+                  border: `1px solid ${currentTheme.brightBlack}`,
+                  borderRadius: '6px',
                   cursor: 'pointer',
                   fontSize: '13px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
+                  fontWeight: 500,
                 }}
                 title="File Manager (SFTP)"
               >
-                <HardDrive size={14} />
+                <HardDrive size={16} />
               </button>
 
               <button
                 onClick={() => setShowAI(!showAI)}
                 style={{
-                  padding: '6px 12px',
-                  background: showAI ? '#0e639c' : '#3c3c3c',
-                  color: '#cccccc',
-                  border: '1px solid #555',
-                  borderRadius: '4px',
+                  padding: '8px 14px',
+                  background: showAI ? currentTheme.blue : (isDarkTheme ? currentTheme.brightBlack : currentTheme.white),
+                  color: showAI ? currentTheme.background : currentTheme.foreground,
+                  border: `1px solid ${currentTheme.brightBlack}`,
+                  borderRadius: '6px',
                   cursor: 'pointer',
                   fontSize: '13px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
+                  fontWeight: 500,
                 }}
                 title="AI Assistant"
               >
-                <Bot size={14} />
+                <Bot size={16} />
               </button>
-            </>
-          )}
 
-          {connected && sessionId && (
-            <>
               <button
                 onClick={() => {
                   const modes: Array<'off' | 'blue' | 'amber' | 'green' | 'matrix'> = ['off', 'blue', 'amber', 'green', 'matrix'];
@@ -842,58 +883,70 @@ export const App: React.FC = () => {
                   setVhsMode(modes[nextIndex]);
                 }}
                 style={{
-                  padding: '6px 12px',
-                  background: vhsMode !== 'off' ? '#0e639c' : '#3c3c3c',
-                  color: '#cccccc',
-                  border: '1px solid #555',
-                  borderRadius: '4px',
+                  padding: '8px 14px',
+                  background: vhsMode !== 'off' ? currentTheme.magenta : (isDarkTheme ? currentTheme.brightBlack : currentTheme.white),
+                  color: vhsMode !== 'off' ? currentTheme.background : currentTheme.foreground,
+                  border: `1px solid ${currentTheme.brightBlack}`,
+                  borderRadius: '6px',
                   cursor: 'pointer',
                   fontSize: '13px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
+                  fontWeight: 500,
                 }}
                 title={`VHS Mode: ${vhsMode === 'off' ? 'Off' : vhsMode === 'blue' ? 'Blue/White CRT' : vhsMode === 'amber' ? 'Amber CRT' : vhsMode === 'green' ? 'Green CRT' : 'Matrix'}`}
               >
-                <Tv size={14} />
+                <Tv size={16} />
                 {vhsMode !== 'off' && <span style={{ fontSize: '10px', textTransform: 'uppercase' }}>{vhsMode}</span>}
               </button>
 
               <button
                 onClick={() => setShowTerminalSettings(true)}
                 style={{
-                  padding: '6px 12px',
-                  background: '#3c3c3c',
-                  color: '#cccccc',
-                  border: '1px solid #555',
-                  borderRadius: '4px',
+                  padding: '8px 14px',
+                  background: isDarkTheme ? currentTheme.brightBlack : currentTheme.white,
+                  color: currentTheme.foreground,
+                  border: `1px solid ${currentTheme.brightBlack}`,
+                  borderRadius: '6px',
                   cursor: 'pointer',
                   fontSize: '13px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
+                  fontWeight: 500,
                 }}
                 title="Terminal Settings"
               >
-                <Settings size={14} />
-              </button>
-
-              <button
-                onClick={handleDisconnect}
-                style={{
-                  padding: '6px 16px',
-                  background: '#cd3131',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                }}
-              >
-                Disconnect
+                <Settings size={16} />
               </button>
             </>
           )}
+
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '12px', alignItems: 'center' }}>
+            {connected && sessionId && (
+              <>
+                <span style={{ fontSize: '13px', color: currentTheme.green, fontWeight: 600 }}>
+                  ● CONNECTED
+                </span>
+                <button
+                  onClick={handleDisconnect}
+                  style={{
+                    padding: '8px 18px',
+                    background: currentTheme.red,
+                    color: isDarkTheme ? currentTheme.background : '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                  }}
+                >
+                  Disconnect
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1137,47 +1190,11 @@ export const App: React.FC = () => {
             flex: 1,
             padding: '8px',
             overflow: 'hidden',
-            background: '#1e1e1e',
+            background: currentTheme.background,
             display: connected ? 'block' : 'none',
             position: 'relative',
           }}
-        >
-          {vhsMode !== 'off' && (() => {
-            const vhsColors = {
-              blue: { scanline: 'rgba(0, 180, 255, 0.15)', glow: '0, 180, 255' },
-              amber: { scanline: 'rgba(255, 176, 0, 0.2)', glow: '255, 176, 0' },
-              green: { scanline: 'rgba(0, 255, 0, 0.15)', glow: '0, 255, 0' },
-              matrix: { scanline: 'rgba(0, 255, 65, 0.2)', glow: '0, 255, 65' }
-            };
-            const colors = vhsColors[vhsMode];
-            return (
-              <>
-                {/* Static scanline overlay - no animation */}
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background: `repeating-linear-gradient(0deg, ${colors.scanline}, ${colors.scanline} 1px, transparent 1px, transparent 2px)`,
-                  pointerEvents: 'none',
-                  zIndex: 2,
-                }} />
-                {/* CRT glow */}
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  boxShadow: `inset 0 0 100px rgba(${colors.glow}, 0.1)`,
-                  pointerEvents: 'none',
-                  zIndex: 1,
-                }} />
-              </>
-            );
-          })()}
-        </div>
+        ></div>
 
         {/* Connecting Overlay */}
         {connecting && (
@@ -1261,10 +1278,10 @@ export const App: React.FC = () => {
       {/* Footer */}
       <div style={{
         padding: '8px 20px',
-        background: '#2d2d2d',
-        borderTop: '1px solid #3e3e3e',
+        background: isDarkTheme ? `${currentTheme.black}dd` : `${currentTheme.white}dd`,
+        borderTop: `1px solid ${currentTheme.brightBlack}`,
         fontSize: '12px',
-        color: '#888',
+        color: currentTheme.brightBlack,
       }}>
         Shellby v1.0.0 | SSH/SFTP Terminal by FintonLabs
       </div>

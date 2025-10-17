@@ -38,6 +38,54 @@
   ],
   "author": "FintonLabs <justyn@fintonlabs.com>",
   "license": "MIT",
+  "build": {
+    "appId": "com.fintonlabs.shellby",
+    "productName": "Shellby",
+    "icon": "build/icon.png",
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "buildDependenciesFromSource": false,
+    "npmRebuild": false,
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    }
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.65.0",
     "@emotion/react": "^11.14.0",
@@ -45,7 +93,6 @@
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
-    "electron": "^38.2.2",
     "electron-store": "^8.2.0",
     "lucide-react": "^0.545.0",
     "node-forge": "^1.3.1",
@@ -72,6 +119,9 @@
     "@types/ssh2": "^1.15.5",
     "@types/uuid": "^10.0.0",
     "css-loader": "^7.1.2",
+    "electron": "^38.2.2",
+    "electron-builder": "^26.0.12",
+    "electron-icon-builder": "^2.0.1",
     "html-webpack-plugin": "^5.6.4",
     "jest": "^30.2.0",
     "style-loader": "^4.0.0",
