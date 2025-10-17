@@ -4,6 +4,33 @@
 
 Shellby is a powerful, feature-rich SSH/SFTP terminal application built with Electron, React, and TypeScript. Named after Finton (FintonLabs' mascot), Shellby brings together essential remote server management tools in one beautiful, responsive interface.
 
+## 🎬 Quick Demo
+
+![Shellby Demo](docs/screenshots/demo.gif)
+
+## 📸 Screenshots
+
+### Beautiful Terminal Experience
+![Terminal](docs/screenshots/screenshot-terminal-main.png)
+
+### Connection Management
+![Connections](docs/screenshots/screenshot-connections.png)
+
+### Dual-Pane File Manager with Drag & Drop
+![File Manager](docs/screenshots/screenshot-file-manager.png)
+
+### AI-Powered Assistant
+![AI Assistant](docs/screenshots/screenshot-ai-assistant.png)
+
+### 230+ Command Snippets
+![Snippets](docs/screenshots/screenshot-snippets.png)
+
+### Clipboard History Manager
+![Clipboard](docs/screenshots/screenshot-clipboard.png)
+
+### Customizable Themes & Settings
+![Themes](docs/screenshots/screenshot-themes.png)
+
 ## ✨ Features
 
 ### 🔐 Connection Management
