@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('electron', {
     list: () => ipcRenderer.invoke(IPCChannels.CONNECTION_LIST),
     toggleFavorite: (id: string) => ipcRenderer.invoke('connection:toggle-favorite', { id }),
     selectKeyFile: () => ipcRenderer.invoke('connection:select-key-file'),
+    exportProfiles: (profiles: any[]) => ipcRenderer.invoke('connection:export-profiles', { profiles }),
+    importProfiles: () => ipcRenderer.invoke('connection:import-profiles'),
   },
 
   // Clipboard API
@@ -214,6 +216,8 @@ declare global {
         list: () => Promise<any>;
         toggleFavorite: (id: string) => Promise<any>;
         selectKeyFile: () => Promise<any>;
+        exportProfiles: (profiles: any[]) => Promise<any>;
+        importProfiles: () => Promise<any>;
       };
       clipboard: {
         copy: (text: string, source?: 'terminal' | 'manual') => Promise<any>;

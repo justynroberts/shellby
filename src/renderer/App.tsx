@@ -11,6 +11,7 @@ import {
   X,
   Save,
   Upload,
+  Download,
   Clipboard,
   Tv,
   Copy,
@@ -20,7 +21,21 @@ import {
   Bot,
   Code,
   CornerDownLeft,
-  Files
+  Files,
+  Database,
+  Cloud,
+  Lock,
+  Zap,
+  Package,
+  Boxes,
+  Container,
+  Globe,
+  Wifi,
+  Shield,
+  Terminal as TerminalIcon,
+  Laptop,
+  MonitorDot,
+  type LucideIcon
 } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import { FileManager } from './components/FileManager';
@@ -327,6 +342,27 @@ const PROFILE_COLORS = [
   '#2472c8', '#11a8cd', '#f14c4c', '#d670d6', '#23d18b'
 ];
 
+const PROFILE_ICONS: Record<string, { icon: LucideIcon; name: string }> = {
+  server: { icon: Server, name: 'Server' },
+  database: { icon: Database, name: 'Database' },
+  cloud: { icon: Cloud, name: 'Cloud' },
+  terminal: { icon: TerminalIcon, name: 'Terminal' },
+  laptop: { icon: Laptop, name: 'Laptop' },
+  monitor: { icon: MonitorDot, name: 'Monitor' },
+  globe: { icon: Globe, name: 'Globe' },
+  wifi: { icon: Wifi, name: 'WiFi' },
+  shield: { icon: Shield, name: 'Shield' },
+  lock: { icon: Lock, name: 'Lock' },
+  zap: { icon: Zap, name: 'Zap' },
+  package: { icon: Package, name: 'Package' },
+  boxes: { icon: Boxes, name: 'Boxes' },
+  container: { icon: Container, name: 'Container' },
+  harddrive: { icon: HardDrive, name: 'HardDrive' },
+  bot: { icon: Bot, name: 'Bot' },
+  code: { icon: Code, name: 'Code' },
+  files: { icon: Files, name: 'Files' },
+};
+
 interface TerminalTab {
   id: string;
   sessionId: string;
@@ -381,6 +417,7 @@ export const App: React.FC = () => {
   const [profileUsername, setProfileUsername] = useState('');
   const [profilePassword, setProfilePassword] = useState('');
   const [profileColor, setProfileColor] = useState(PROFILE_COLORS[0]);
+  const [profileIcon, setProfileIcon] = useState('server');
   const [profileAuthMethod, setProfileAuthMethod] = useState<'password' | 'publickey'>('password');
   const [profilePrivateKey, setProfilePrivateKey] = useState('');
   const [profilePassphrase, setProfilePassphrase] = useState('');
@@ -409,6 +446,53 @@ export const App: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to load profiles:', err);
+    }
+  };
+
+  const handleExportProfiles = async () => {
+    try {
+      const response = await window.electron.connections.exportProfiles(profiles);
+      if (response.success) {
+        setError(`Successfully exported ${response.data.count} connection(s)`);
+        setTimeout(() => setError(null), 3000);
+      } else if (response.error !== 'Cancelled') {
+        setError(`Export failed: ${response.error}`);
+      }
+    } catch (err: any) {
+      setError(`Export failed: ${err.message}`);
+    }
+  };
+
+  const handleImportProfiles = async () => {
+    try {
+      const response = await window.electron.connections.importProfiles();
+      if (response.success && response.data) {
+        const importedProfiles = response.data;
+        let savedCount = 0;
+
+        for (const profile of importedProfiles) {
+          try {
+            // Remove id so it creates new profiles instead of overwriting
+            const { id, ...profileWithoutId } = profile;
+            const saveResponse = await window.electron.connections.save(profileWithoutId);
+            if (saveResponse.success) {
+              savedCount++;
+            }
+          } catch (err) {
+            console.error('Failed to save profile:', err);
+          }
+        }
+
+        if (savedCount > 0) {
+          await loadProfiles();
+          setError(`Successfully imported ${savedCount} connection(s)`);
+          setTimeout(() => setError(null), 3000);
+        }
+      } else if (response.error !== 'Cancelled') {
+        setError(`Import failed: ${response.error}`);
+      }
+    } catch (err: any) {
+      setError(`Import failed: ${err.message}`);
     }
   };
 
@@ -545,6 +629,7 @@ export const App: React.FC = () => {
       setProfileUsername(profile.username);
       setProfilePassword(profile.password || '');
       setProfileColor(profile.color || PROFILE_COLORS[0]);
+      setProfileIcon(profile.icon || 'server');
       setProfileAuthMethod(profile.authMethod || 'password');
       setProfilePrivateKey(profile.privateKeyContent || '');
       setProfilePassphrase(profile.passphrase || '');
@@ -557,6 +642,7 @@ export const App: React.FC = () => {
       setProfileUsername('');
       setProfilePassword('');
       setProfileColor(PROFILE_COLORS[0]);
+      setProfileIcon('server');
       setProfileAuthMethod('password');
       setProfilePrivateKey('');
       setProfilePassphrase('');
@@ -594,9 +680,12 @@ export const App: React.FC = () => {
         port: parseInt(profilePort, 10),
         username: profileUsername,
         color: profileColor,
+        icon: profileIcon,
         authMethod: profileAuthMethod,
         tags: profileTags,
       };
+
+      console.log('Saving profile with tags:', profileTags);
 
       if (profileAuthMethod === 'password') {
         profile.password = profilePassword;
@@ -647,6 +736,7 @@ export const App: React.FC = () => {
     setProfileUsername(profile.username);
     setProfilePassword(profile.password || '');
     setProfileColor(profile.color || PROFILE_COLORS[0]);
+    setProfileIcon(profile.icon || 'server');
     setProfileAuthMethod(profile.authMethod || 'password');
     setProfilePrivateKey(profile.privateKeyContent || '');
     setProfilePassphrase(profile.passphrase || '');
@@ -868,16 +958,22 @@ export const App: React.FC = () => {
   }[vhsMode] : null;
 
   return (
-    <div style={{
-      width: '100%',
-      height: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      background: currentTheme.background,
-      color: currentTheme.foreground,
-      fontFamily: 'Space Grotesk, sans-serif',
-      position: 'relative',
-    }}>
+    <>
+      <style>{`
+        .connection-card:hover .connection-card-actions {
+          opacity: 1 !important;
+        }
+      `}</style>
+      <div style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        background: currentTheme.background,
+        color: currentTheme.foreground,
+        fontFamily: 'Space Grotesk, sans-serif',
+        position: 'relative',
+      }}>
       {/* VHS/CRT Effects Overlay - Applied to entire UI */}
       {vhsMode !== 'off' && vhsColors && (
         <>
@@ -1217,25 +1313,68 @@ export const App: React.FC = () => {
             <h2 style={{ fontSize: '24px', margin: 0, fontWeight: 600 }}>
               Saved Connections
             </h2>
-            <button
-              onClick={() => openProfileModal()}
-              style={{
-                padding: '10px 20px',
-                background: '#0e639c',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: 500,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-            >
-              <Plus size={16} />
-              New Connection
-            </button>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={handleImportProfiles}
+                style={{
+                  padding: '10px 16px',
+                  background: '#3c3c3c',
+                  color: 'white',
+                  border: '1px solid #555',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+                title="Import connections from JSON file"
+              >
+                <Download size={16} />
+                Import
+              </button>
+              <button
+                onClick={handleExportProfiles}
+                disabled={profiles.length === 0}
+                style={{
+                  padding: '10px 16px',
+                  background: profiles.length === 0 ? '#2a2a2a' : '#3c3c3c',
+                  color: profiles.length === 0 ? '#666' : 'white',
+                  border: '1px solid #555',
+                  borderRadius: '6px',
+                  cursor: profiles.length === 0 ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+                title="Export connections to JSON file (passwords excluded)"
+              >
+                <Upload size={16} />
+                Export
+              </button>
+              <button
+                onClick={() => openProfileModal()}
+                style={{
+                  padding: '10px 20px',
+                  background: '#0e639c',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <Plus size={16} />
+                New Connection
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -1274,9 +1413,12 @@ export const App: React.FC = () => {
               gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
               gap: '16px',
             }}>
-              {profiles.map((profile) => (
-                <div
+              {profiles.map((profile) => {
+                const IconComponent = PROFILE_ICONS[profile.icon || 'server']?.icon || Server;
+
+                return (<div
                   key={profile.id}
+                  className="connection-card"
                   style={{
                     background: '#252526',
                     border: '1px solid #3e3e3e',
@@ -1298,71 +1440,74 @@ export const App: React.FC = () => {
                     e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
-                  <div style={{
-                    position: 'absolute',
-                    top: '12px',
-                    right: '12px',
-                    display: 'flex',
-                    gap: '8px',
-                  }}>
-                    <button
-                      onClick={(e) => cloneProfile(profile, e)}
-                      style={{
-                        padding: '6px',
-                        background: '#3c3c3c',
-                        color: '#2472c8',
-                        border: '1px solid #555',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                      title="Clone connection"
-                    >
-                      <Files size={14} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openProfileModal(profile);
-                      }}
-                      style={{
-                        padding: '6px',
-                        background: '#3c3c3c',
-                        color: '#cccccc',
-                        border: '1px solid #555',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                      title="Edit connection"
-                    >
-                      <Edit2 size={14} />
-                    </button>
-                    <button
-                      onClick={(e) => deleteProfile(profile.id, e)}
-                      style={{
-                        padding: '6px',
-                        background: '#5a1d1d',
-                        color: '#f48771',
-                        border: '1px solid #cd3131',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                      title="Delete connection"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                  <div className="connection-card-actions" style={{
+                      position: 'absolute',
+                      top: '12px',
+                      right: '12px',
+                      display: 'flex',
+                      gap: '8px',
+                      opacity: 0,
+                      transition: 'opacity 0.2s',
+                      zIndex: 10,
+                    }}>
+                      <button
+                        onClick={(e) => cloneProfile(profile, e)}
+                        style={{
+                          padding: '6px',
+                          background: '#3c3c3c',
+                          color: '#2472c8',
+                          border: '1px solid #555',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                        title="Clone connection"
+                      >
+                        <Files size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openProfileModal(profile);
+                        }}
+                        style={{
+                          padding: '6px',
+                          background: '#3c3c3c',
+                          color: '#cccccc',
+                          border: '1px solid #555',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                        title="Edit connection"
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => deleteProfile(profile.id, e)}
+                        style={{
+                          padding: '6px',
+                          background: '#5a1d1d',
+                          color: '#f48771',
+                          border: '1px solid #cd3131',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                        title="Delete connection"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
 
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
-                    marginBottom: '16px',
+                    marginBottom: '12px',
                   }}>
                     <div style={{
                       width: '48px',
@@ -1373,8 +1518,9 @@ export const App: React.FC = () => {
                       alignItems: 'center',
                       justifyContent: 'center',
                       color: 'white',
+                      flexShrink: 0,
                     }}>
-                      <Server size={24} />
+                      <IconComponent size={24} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{
@@ -1399,25 +1545,10 @@ export const App: React.FC = () => {
                     </div>
                   </div>
 
-                  {profile.description && (
-                    <div style={{
-                      fontSize: '13px',
-                      color: '#aaa',
-                      marginTop: '8px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                    }}>
-                      {profile.description}
-                    </div>
-                  )}
-
                   {/* Neon pill tags */}
                   {profile.tags && profile.tags.length > 0 && (
                     <div style={{
-                      marginTop: '12px',
+                      marginTop: '0',
                       display: 'flex',
                       flexWrap: 'wrap',
                       gap: '6px',
@@ -1444,7 +1575,8 @@ export const App: React.FC = () => {
                     </div>
                   )}
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>
@@ -1740,7 +1872,7 @@ export const App: React.FC = () => {
         fontSize: '12px',
         color: currentTheme.brightBlack,
       }}>
-        Shellby v1.0.0 | SSH/SFTP Terminal by FintonLabs
+        Shellby v1.0.3 | SSH/SFTP Terminal by FintonLabs
       </div>
 
       {/* Profile Modal */}
@@ -1999,6 +2131,47 @@ export const App: React.FC = () => {
 
                 <div>
                   <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                    Icon
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
+                    {Object.entries(PROFILE_ICONS).map(([key, { icon: IconComponent, name }]) => (
+                      <div
+                        key={key}
+                        onClick={() => setProfileIcon(key)}
+                        style={{
+                          width: '48px',
+                          height: '48px',
+                          background: profileIcon === key ? profileColor : '#3c3c3c',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          border: profileIcon === key ? `2px solid ${profileColor}` : '2px solid #555',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (profileIcon !== key) {
+                            e.currentTarget.style.borderColor = '#888';
+                            e.currentTarget.style.background = '#454545';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (profileIcon !== key) {
+                            e.currentTarget.style.borderColor = '#555';
+                            e.currentTarget.style.background = '#3c3c3c';
+                          }
+                        }}
+                        title={name}
+                      >
+                        <IconComponent size={24} color={profileIcon === key ? 'white' : '#888'} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
                     Tags
                   </label>
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
@@ -2007,15 +2180,21 @@ export const App: React.FC = () => {
                       value={profileTagInput}
                       onChange={(e) => setProfileTagInput(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && profileTagInput.trim()) {
+                        console.log('Key down:', e.key);
+                        if (e.key === 'Enter') {
                           e.preventDefault();
-                          if (!profileTags.includes(profileTagInput.trim())) {
-                            setProfileTags([...profileTags, profileTagInput.trim()]);
+                          e.stopPropagation();
+                          const trimmed = profileTagInput.trim();
+                          console.log('Enter pressed, tag input:', trimmed, 'current tags:', profileTags);
+                          if (trimmed && !profileTags.includes(trimmed)) {
+                            const newTags = [...profileTags, trimmed];
+                            console.log('Adding tag, new tags:', newTags);
+                            setProfileTags(newTags);
+                            setProfileTagInput('');
                           }
-                          setProfileTagInput('');
                         }
                       }}
-                      placeholder="Add tag..."
+                      placeholder="Type tag and press Enter..."
                       style={{
                         flex: 1,
                         padding: '10px 12px',
@@ -2026,6 +2205,32 @@ export const App: React.FC = () => {
                         fontSize: '14px',
                       }}
                     />
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const trimmed = profileTagInput.trim();
+                        console.log('Add button clicked, tag input:', trimmed, 'current tags:', profileTags);
+                        if (trimmed && !profileTags.includes(trimmed)) {
+                          const newTags = [...profileTags, trimmed];
+                          console.log('Adding tag via button, new tags:', newTags);
+                          setProfileTags(newTags);
+                          setProfileTagInput('');
+                        }
+                      }}
+                      style={{
+                        padding: '10px 16px',
+                        background: '#0e639c',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                      }}
+                    >
+                      Add
+                    </button>
                   </div>
                   {profileTags.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -2598,5 +2803,6 @@ export const App: React.FC = () => {
         </div>
       )}
     </div>
+    </>
   );
 };

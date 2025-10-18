@@ -289,6 +289,73 @@ function setupIPC() {
     }
   });
 
+  ipcMain.handle('connection:export-profiles', async (event, { profiles }) => {
+    try {
+      logger.info('IPC: Export Profiles requested');
+
+      // Strip sensitive data from profiles
+      const sanitizedProfiles = profiles.map((profile: any) => {
+        const { password, privateKey, passphrase, certificate, ...safeProfile } = profile;
+        return safeProfile;
+      });
+
+      const result = await dialog.showSaveDialog({
+        title: 'Export Connection Profiles',
+        defaultPath: 'shellby-connections.json',
+        filters: [
+          { name: 'JSON Files', extensions: ['json'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: 'Cancelled' };
+      }
+
+      fs.writeFileSync(result.filePath, JSON.stringify(sanitizedProfiles, null, 2), 'utf-8');
+      logger.info('IPC: Profiles exported to:', result.filePath);
+
+      return { success: true, data: { path: result.filePath, count: sanitizedProfiles.length } };
+    } catch (error: any) {
+      logger.error('IPC: Export Profiles failed:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('connection:import-profiles', async (event) => {
+    try {
+      logger.info('IPC: Import Profiles requested');
+
+      const result = await dialog.showOpenDialog({
+        title: 'Import Connection Profiles',
+        filters: [
+          { name: 'JSON Files', extensions: ['json'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+        properties: ['openFile'],
+      });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, error: 'Cancelled' };
+      }
+
+      const filePath = result.filePaths[0];
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      const profiles = JSON.parse(fileContent);
+
+      if (!Array.isArray(profiles)) {
+        return { success: false, error: 'Invalid file format: expected array of profiles' };
+      }
+
+      logger.info('IPC: Imported', profiles.length, 'profiles from:', filePath);
+
+      return { success: true, data: profiles };
+    } catch (error: any) {
+      logger.error('IPC: Import Profiles failed:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // SFTP Handlers
   ipcMain.handle(IPCChannels.SFTP_INIT, async (event, { sessionId }) => {
     try {
