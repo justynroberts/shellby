@@ -1872,7 +1872,7 @@ export const App: React.FC = () => {
         fontSize: '12px',
         color: currentTheme.brightBlack,
       }}>
-        Shellby v1.0.3 | SSH/SFTP Terminal by FintonLabs
+        Shellby v1.0.4 | SSH/SFTP Terminal by FintonLabs
       </div>
 
       {/* Profile Modal */}

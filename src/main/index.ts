@@ -674,6 +674,17 @@ function setupIPC() {
     }
   });
 
+  ipcMain.handle('ai:get-ollama-models', async (event) => {
+    try {
+      logger.info('IPC: Get Ollama Models requested');
+      const models = await aiManager.getOllamaModels();
+      return { success: true, data: models };
+    } catch (error: any) {
+      logger.error('IPC: Get Ollama Models failed:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Snippet Handlers
   ipcMain.handle(IPCChannels.SNIPPET_GET_ALL, async (event) => {
     try {

@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import Store from 'electron-store';
 import { Logger } from '../../utils/logger';
 import { AISettings, AIMessage, AIResponse, DEFAULT_AI_SETTINGS } from '../../../shared/types/ai';
+import fetch from 'node:fetch';
 
 export class AIManager {
   private logger: Logger;
@@ -14,25 +15,75 @@ export class AIManager {
   }
 
   /**
-   * Initialize OpenAI client with current settings
+   * Initialize OpenAI-compatible client with current settings
    */
   private initializeClient(): void {
     const settings = this.getSettings();
 
-    if (!settings.apiKey) {
-      throw new Error('API key not configured. Please add your OpenRouter API key in AI Settings.');
+    // For Ollama, we don't need an API key
+    if (settings.provider !== 'ollama' && !settings.apiKey) {
+      throw new Error('API key not configured. Please add your API key in AI Settings.');
     }
 
-    this.client = new OpenAI({
-      baseURL: settings.baseURL,
-      apiKey: settings.apiKey,
-      defaultHeaders: {
+    const clientConfig: any = {
+      baseURL: settings.baseURL || this.getDefaultBaseURL(settings.provider),
+      apiKey: settings.apiKey || 'ollama', // Ollama doesn't require a key but the client needs something
+    };
+
+    // Add headers for non-Ollama providers
+    if (settings.provider !== 'ollama') {
+      clientConfig.defaultHeaders = {
         'HTTP-Referer': 'https://github.com/shelby-terminal',
         'X-Title': 'Shelby Terminal',
-      },
-    });
+      };
+    }
 
-    this.logger.info('AI client initialized with model:', settings.model);
+    this.client = new OpenAI(clientConfig);
+
+    this.logger.info('AI client initialized:', { provider: settings.provider, model: settings.model });
+  }
+
+  /**
+   * Get default base URL for provider
+   */
+  private getDefaultBaseURL(provider: string): string {
+    switch (provider) {
+      case 'ollama':
+        return 'http://localhost:11434/v1';
+      case 'claude':
+        return 'https://api.anthropic.com/v1';
+      case 'openai':
+        return 'https://api.openai.com/v1';
+      default:
+        return 'http://localhost:11434/v1';
+    }
+  }
+
+  /**
+   * Fetch available Ollama models from local instance
+   */
+  async getOllamaModels(): Promise<Array<{ id: string; name: string; size: number }>> {
+    try {
+      const settings = this.getSettings();
+      const baseURL = settings.baseURL?.replace('/v1', '') || 'http://localhost:11434';
+
+      const response = await fetch(`${baseURL}/api/tags`);
+      if (!response.ok) {
+        throw new Error(`Ollama API returned ${response.status}`);
+      }
+
+      const data: any = await response.json();
+      const models = data.models || [];
+
+      return models.map((model: any) => ({
+        id: model.name,
+        name: model.name,
+        size: model.size || 0,
+      }));
+    } catch (error: any) {
+      this.logger.error('Failed to fetch Ollama models:', error);
+      throw new Error(`Failed to connect to Ollama: ${error.message}`);
+    }
   }
 
   /**

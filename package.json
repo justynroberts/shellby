@@ -1,7 +1,7 @@
 {
   "name": "shellby",
   "productName": "Shellby",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Modern SSH/SFTP terminal with AI assistant, file manager, and clipboard manager by FintonLabs",
   "main": "dist/main/index.js",
   "repository": {

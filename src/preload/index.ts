@@ -166,6 +166,9 @@ contextBridge.exposeInMainWorld('electron', {
 
     generateScript: (task: string, language?: 'bash' | 'python') =>
       ipcRenderer.invoke(IPCChannels.AI_GENERATE_SCRIPT, { task, language }),
+
+    getOllamaModels: () =>
+      ipcRenderer.invoke('ai:get-ollama-models'),
   },
 
   // Snippets API
@@ -266,6 +269,7 @@ declare global {
         analyzeLogs: (logs: string, question?: string) => Promise<any>;
         chat: (messages: any[], context?: string) => Promise<any>;
         generateScript: (task: string, language?: 'bash' | 'python') => Promise<any>;
+        getOllamaModels: () => Promise<any>;
       };
       snippets: {
         getAll: () => Promise<any>;
